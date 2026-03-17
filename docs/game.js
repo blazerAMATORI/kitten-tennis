@@ -134,21 +134,23 @@ class Player{
     const L=this.idx===0?'a':'ArrowLeft';
     const R=this.idx===0?'d':'ArrowRight';
     const J=this.idx===0?' ':'ArrowUp';
+    const D=this.idx===0?'s':'ArrowDown';
     let mv=0;
     if(keys[L]){mv=-1;this.facing=-1;}
     if(keys[R]){mv=1; this.facing=1;}
     this.vx=mv*SPD;
     if(!mv)this.vx*=.7;
 
+    // JUMP
     if(keys[J]){
       if(this.onGround&&this.jumpT<=0){
-        // JUMP
         this.vy=JV; this.onGround=false; this.jumpT=.28;
         SFX.play('jump'); ps.dust(this.x,GY,10);
-      } else if(!this.onGround&&this.vy<80){
-        // FAST FALL — пресс вниз пока в воздухе
-        this.vy+=FALL_BOOST*dt;
       }
+    }
+    // FAST FALL — отдельная кнопка S / ↓
+    if(keys[D]&&!this.onGround){
+      this.vy+=FALL_BOOST*dt;
     }
     this.jumpT=Math.max(0,this.jumpT-dt);
   }
@@ -295,10 +297,13 @@ class Ball{
   }
   update(dt){
     if(!this.visible)return;
-    const l=Math.min(1,dt*22);
+    const l=Math.min(1,dt*14);
     this.x+=(this.tx-this.x)*l; this.y+=(this.ty-this.y)*l;
     this.vx+=(this.tvx-this.vx)*l; this.vy+=(this.tvy-this.vy)*l;
     this.rot+=this.vx*dt*.055;
+    // Never go below ground
+    if(this.ty>GY-BR) this.ty=GY-BR;
+    if(this.y>GY-BR)  this.y=GY-BR;
     this.trail.unshift({x:this.x,y:this.y});
     if(this.trail.length>12)this.trail.pop();
   }
@@ -452,6 +457,7 @@ class Game{
   }
 
   _update(dt){
+    dt=Math.min(dt,0.033);
     const local=this.players[this.localIdx];
     const remote=this.players[1-this.localIdx];
     local.input(this.keys,dt,this.ps);
