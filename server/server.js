@@ -36,8 +36,8 @@ const WIN_SCORE   = 7;
 
 // ── ВОРОТА: нижняя часть каждой стены ──
 // Гол засчитывается если мяч касается стены И его Y > GOAL_TOP
-const GOAL_WIDTH  = 18;   // насколько близко к стене = "в воротах"
-const GOAL_TOP    = GROUND_Y - 90;  // высота ворот (нижние 90px корта)
+const GOAL_WIDTH  = 12;   // насколько близко к стене = "в воротах"
+const GOAL_TOP    = GROUND_Y - 55;  // высота ворот (нижние 90px корта)
 
 class Room {
   constructor(code) {

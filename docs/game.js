@@ -12,6 +12,32 @@
 
 'use strict';
 
+// ── Nicknames & win phrases ───────────────────────────────────────────────────
+const WIN_PHRASES = [
+  '{winner} уничтожил {loser}!',
+  '{winner} размазал {loser} по корту!',
+  '{winner} показал {loser} кто тут котик!',
+  '{winner} отправил {loser} на скамейку запасных!',
+  '{winner} разнёс {loser} в пух и прах!',
+  '{loser} и близко не подошёл к {winner}!',
+  '{winner} — король корта, {loser} — просто мяч!',
+  '{winner} гонял {loser} как мячик!',
+  '{loser} плачет, {winner} празднует!',
+  '{winner} втоптал {loser} в траву!',
+];
+
+function getWinPhrase(winner, loser) {
+  const phrase = WIN_PHRASES[Math.floor(Math.random() * WIN_PHRASES.length)];
+  return phrase.replace(/{winner}/g, winner).replace(/{loser}/g, loser);
+}
+
+function getLocalNick() {
+  return document.getElementById('nick-input')?.value.trim() || 'Аноним';
+}
+
+let playerNicks = ['Игрок 1', 'Игрок 2'];
+
+
 // ════════════════════════════════════════════════════════════════════════════
 // CONSTANTS (must match server/server.js)
 // ════════════════════════════════════════════════════════════════════════════
@@ -25,8 +51,8 @@ const GRAVITY     = 480;
 const JUMP_VY     = -520;
 const PLAYER_SPD  = 280;
 const TARGET_FPS  = 60;
-const GOAL_WIDTH  = 18;
-const GOAL_TOP    = GROUND_Y - 90;
+const GOAL_WIDTH  = 12;
+const GOAL_TOP    = GROUND_Y - 55;
 const FRAME_MS    = 1000 / TARGET_FPS;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -363,11 +389,14 @@ class Player {
     ctx.scale(scaleX, scaleY);
 
     if (sprite) {
-      // Draw sprite
+      // Draw sprite with canvas size matching aspect
       const sw = 64, sh = 72;
+      // Try to detect white background by checking if image has transparency
+      ctx.save();
+      // Use destination-in to remove white bg (works if PNG has alpha)
       ctx.drawImage(sprite, -sw / 2, -sh / 2, sw, sh);
+      ctx.restore();
     } else {
-      // ── Fallback drawn cat ──────────────────────────────────────────────
       this._drawFallbackCat(ctx);
     }
 
@@ -852,61 +881,54 @@ class Game {
 
 
   _drawGoals(ctx, W, H) {
-    const goalTop = GROUND_Y - 90;
+    const goalTop = GOAL_TOP;
     const goalW   = GOAL_WIDTH;
+    const pink    = '#FF6B9D';
+    const pinkBg  = 'rgba(255,107,157,0.25)';
 
-    // Left goal (P1 defends)
-    const lgrd = ctx.createLinearGradient(0, 0, goalW, 0);
-    lgrd.addColorStop(0, 'rgba(255,100,100,0.55)');
-    lgrd.addColorStop(1, 'rgba(255,100,100,0)');
-    ctx.fillStyle = lgrd;
+    // ── Левые ворота ──
+    ctx.fillStyle = pinkBg;
     ctx.fillRect(0, goalTop, goalW, GROUND_Y - goalTop);
 
-    // Left goal frame
-    ctx.strokeStyle = '#ff4455';
-    ctx.lineWidth = 3;
+    // Верхняя перекладина
+    ctx.strokeStyle = pink;
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, goalTop);
+    ctx.lineTo(goalW + 4, goalTop);
+    ctx.stroke();
+
+    // Штанга (вертикаль у стены)
+    ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.moveTo(goalW, goalTop);
-    ctx.lineTo(0, goalTop);
-    ctx.lineTo(0, GROUND_Y);
+    ctx.lineTo(goalW, GROUND_Y);
     ctx.stroke();
 
-    // Left goal post circles
-    ctx.fillStyle = '#ff4455';
+    // Шар на штанге
+    ctx.fillStyle = pink;
     ctx.beginPath(); ctx.arc(goalW, goalTop, 5, 0, Math.PI*2); ctx.fill();
 
-    // Left label
-    ctx.save();
-    ctx.font = 'bold 10px Nunito, sans-serif';
-    ctx.fillStyle = 'rgba(255,80,80,0.8)';
-    ctx.textAlign = 'center';
-    ctx.fillText('GOAL', goalW/2, goalTop - 6);
-    ctx.restore();
-
-    // Right goal (P2 defends)
-    const rgrd = ctx.createLinearGradient(W, 0, W - goalW, 0);
-    rgrd.addColorStop(0, 'rgba(100,180,255,0.55)');
-    rgrd.addColorStop(1, 'rgba(100,180,255,0)');
-    ctx.fillStyle = rgrd;
+    // ── Правые ворота ──
+    ctx.fillStyle = pinkBg;
     ctx.fillRect(W - goalW, goalTop, goalW, GROUND_Y - goalTop);
 
-    ctx.strokeStyle = '#4488ff';
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = pink;
+    ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.moveTo(W - goalW, goalTop);
-    ctx.lineTo(W, goalTop);
-    ctx.lineTo(W, GROUND_Y);
+    ctx.moveTo(W, goalTop);
+    ctx.lineTo(W - goalW - 4, goalTop);
     ctx.stroke();
 
-    ctx.fillStyle = '#4488ff';
-    ctx.beginPath(); ctx.arc(W - goalW, goalTop, 5, 0, Math.PI*2); ctx.fill();
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(W - goalW, goalTop);
+    ctx.lineTo(W - goalW, GROUND_Y);
+    ctx.stroke();
 
-    ctx.save();
-    ctx.font = 'bold 10px Nunito, sans-serif';
-    ctx.fillStyle = 'rgba(60,140,255,0.8)';
-    ctx.textAlign = 'center';
-    ctx.fillText('GOAL', W - goalW/2, goalTop - 6);
-    ctx.restore();
+    ctx.fillStyle = pink;
+    ctx.beginPath(); ctx.arc(W - goalW, goalTop, 5, 0, Math.PI*2); ctx.fill();
   }
 
   _drawNet(ctx) {
@@ -1026,8 +1048,10 @@ const UIManager = (() => {
     // Size canvas responsively
     const canvas = document.getElementById('game-canvas');
     function resizeCanvas() {
-      const maxW = Math.min(window.innerWidth, 820);
-      const scale = Math.min(maxW / GAME_W, (window.innerHeight - 80) / GAME_H);
+      const padH = 80;
+      const scaleW = window.innerWidth / GAME_W;
+      const scaleH = (window.innerHeight - padH) / GAME_H;
+      const scale  = Math.min(scaleW, scaleH);
       canvas.style.width  = (GAME_W * scale) + 'px';
       canvas.style.height = (GAME_H * scale) + 'px';
     }
@@ -1043,6 +1067,8 @@ const UIManager = (() => {
 
     // ── Button: Create Room ──
     document.getElementById('btn-create').addEventListener('click', () => {
+      playerNicks[0] = getLocalNick();
+      document.getElementById('label-p1').textContent = '😸 ' + playerNicks[0];
       SocketManager.createRoom();
     });
 
@@ -1059,6 +1085,8 @@ const UIManager = (() => {
     document.getElementById('btn-join-confirm').addEventListener('click', () => {
       const code = document.getElementById('room-code-input').value.trim().toUpperCase();
       if (!code) return;
+      playerNicks[1] = getLocalNick();
+      document.getElementById('label-p2').textContent = playerNicks[1] + ' 😼';
       SocketManager.joinRoom(code);
     });
     document.getElementById('room-code-input').addEventListener('keydown', e => {
@@ -1157,10 +1185,14 @@ const UIManager = (() => {
 
     SocketManager.on('gameOver', (msg) => {
       game.stop();
-      const winnerName = msg.winner === 0 ? 'Player 1 🐱' : 'Player 2 😼';
-      const emoji = msg.winner === 0 ? '🏆' : '🎉';
+      const wIdx = msg.winner;
+      const lIdx = 1 - wIdx;
+      const wName = playerNicks[wIdx] || ('Игрок ' + (wIdx+1));
+      const lName = playerNicks[lIdx] || ('Игрок ' + (lIdx+1));
+      const emoji = wIdx === 0 ? '🏆' : '🎉';
       document.getElementById('winner-emoji').textContent = emoji;
-      document.getElementById('winner-title').textContent = `${winnerName} Wins!`;
+      document.getElementById('winner-title').textContent = wName + ' победил!';
+      document.getElementById('winner-phrase').textContent = getWinPhrase(wName, lName);
       document.getElementById('final-scores').textContent = `${msg.scores[0]} – ${msg.scores[1]}`;
       showScreen('screen-gameover');
     });

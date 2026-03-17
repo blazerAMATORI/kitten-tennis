@@ -389,3 +389,43 @@ body {
   .menu-container { padding: 32px 24px; }
   .game-title h1  { font-size: 30px; }
 }
+
+/* Fullscreen canvas wrapper */
+#screen-game {
+  padding: 0;
+  justify-content: flex-start;
+}
+#game-canvas {
+  display: block;
+  width: 100% !important;
+  max-width: 100vw;
+}
+
+/* Nick input */
+.nick-row {
+  margin-bottom: 16px;
+}
+.nick-row input {
+  width: 100%;
+  padding: 10px 16px;
+  border: 2px solid #ffd6e8;
+  border-radius: 12px;
+  font-family: 'Nunito', sans-serif;
+  font-size: 16px;
+  font-weight: 800;
+  text-align: center;
+  outline: none;
+  transition: border-color .2s;
+}
+.nick-row input:focus { border-color: var(--pink); }
+
+/* Winner phrase */
+.winner-phrase {
+  font-size: 18px;
+  font-weight: 800;
+  color: #e8527f;
+  margin: 0 0 12px;
+  text-align: center;
+  max-width: 360px;
+  line-height: 1.4;
+}
