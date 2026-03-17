@@ -20,11 +20,13 @@ const GAME_H      = 450;
 const GROUND_Y    = GAME_H - 60;
 const NET_X       = GAME_W / 2;
 const NET_H       = 110;
-const BALL_R      = 14;
-const GRAVITY     = 980;
+const BALL_R      = 20;
+const GRAVITY     = 480;
 const JUMP_VY     = -520;
 const PLAYER_SPD  = 280;
 const TARGET_FPS  = 60;
+const GOAL_WIDTH  = 18;
+const GOAL_TOP    = GROUND_Y - 90;
 const FRAME_MS    = 1000 / TARGET_FPS;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -845,6 +847,65 @@ class Game {
     ctx.arc(x - size * 0.5, y + 8, size * 0.45, 0, Math.PI * 2);
     ctx.arc(x + size * 0.25, y + 14, size * 0.5, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
+  }
+
+
+  _drawGoals(ctx, W, H) {
+    const goalTop = GROUND_Y - 90;
+    const goalW   = GOAL_WIDTH;
+
+    // Left goal (P1 defends)
+    const lgrd = ctx.createLinearGradient(0, 0, goalW, 0);
+    lgrd.addColorStop(0, 'rgba(255,100,100,0.55)');
+    lgrd.addColorStop(1, 'rgba(255,100,100,0)');
+    ctx.fillStyle = lgrd;
+    ctx.fillRect(0, goalTop, goalW, GROUND_Y - goalTop);
+
+    // Left goal frame
+    ctx.strokeStyle = '#ff4455';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(goalW, goalTop);
+    ctx.lineTo(0, goalTop);
+    ctx.lineTo(0, GROUND_Y);
+    ctx.stroke();
+
+    // Left goal post circles
+    ctx.fillStyle = '#ff4455';
+    ctx.beginPath(); ctx.arc(goalW, goalTop, 5, 0, Math.PI*2); ctx.fill();
+
+    // Left label
+    ctx.save();
+    ctx.font = 'bold 10px Nunito, sans-serif';
+    ctx.fillStyle = 'rgba(255,80,80,0.8)';
+    ctx.textAlign = 'center';
+    ctx.fillText('GOAL', goalW/2, goalTop - 6);
+    ctx.restore();
+
+    // Right goal (P2 defends)
+    const rgrd = ctx.createLinearGradient(W, 0, W - goalW, 0);
+    rgrd.addColorStop(0, 'rgba(100,180,255,0.55)');
+    rgrd.addColorStop(1, 'rgba(100,180,255,0)');
+    ctx.fillStyle = rgrd;
+    ctx.fillRect(W - goalW, goalTop, goalW, GROUND_Y - goalTop);
+
+    ctx.strokeStyle = '#4488ff';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(W - goalW, goalTop);
+    ctx.lineTo(W, goalTop);
+    ctx.lineTo(W, GROUND_Y);
+    ctx.stroke();
+
+    ctx.fillStyle = '#4488ff';
+    ctx.beginPath(); ctx.arc(W - goalW, goalTop, 5, 0, Math.PI*2); ctx.fill();
+
+    ctx.save();
+    ctx.font = 'bold 10px Nunito, sans-serif';
+    ctx.fillStyle = 'rgba(60,140,255,0.8)';
+    ctx.textAlign = 'center';
+    ctx.fillText('GOAL', W - goalW/2, goalTop - 6);
     ctx.restore();
   }
 
