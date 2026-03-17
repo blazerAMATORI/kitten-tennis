@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🐱 Kitten Tennis</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════
+       MAIN MENU
+  ════════════════════════════════════════════ -->
+  <div id="screen-menu" class="screen active">
+    <div class="menu-container">
+      <div class="game-title">
+        <span class="title-emoji">🐾</span>
+        <h1>Kitten Tennis</h1>
+        <span class="title-emoji">🎾</span>
+      </div>
+      <p class="menu-subtitle">The most adorable multiplayer tennis game!</p>
+
+      <div class="menu-buttons">
+        <button class="btn btn-primary" id="btn-create">
+          🏠 Create Room
+        </button>
+        <button class="btn btn-secondary" id="btn-join-toggle">
+          🔗 Join Room
+        </button>
+      </div>
+
+      <!-- Join room form (hidden initially) -->
+      <div id="join-form" class="join-form hidden">
+        <input
+          type="text"
+          id="room-code-input"
+          placeholder="Enter code e.g. KITTEN123"
+          maxlength="12"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button class="btn btn-accent" id="btn-join-confirm">
+          🐾 Join!
+        </button>
+        <p id="join-error" class="error-text hidden"></p>
+      </div>
+
+      <!-- Created room waiting panel -->
+      <div id="waiting-panel" class="waiting-panel hidden">
+        <p class="waiting-label">Share this code with your friend:</p>
+        <div class="room-code-display" id="room-code-display">...</div>
+        <button class="btn btn-small" id="btn-copy-code">📋 Copy Code</button>
+        <div class="waiting-spinner">
+          <span>Waiting for opponent</span>
+          <span class="dots"></span>
+        </div>
+      </div>
+
+      <div class="menu-controls-hint">
+        <strong>P1:</strong> A/D to move · Space to jump/hit &nbsp;|&nbsp;
+        <strong>P2:</strong> ← / → to move · ↑ to jump/hit
+      </div>
+    </div>
+
+    <!-- Decorative cats -->
+    <div class="deco-cat deco-cat-left">🐱</div>
+    <div class="deco-cat deco-cat-right">😺</div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       GAME SCREEN
+  ════════════════════════════════════════════ -->
+  <div id="screen-game" class="screen">
+    <div class="game-ui-top">
+      <div class="score-display">
+        <div class="player-score" id="score-p1">
+          <span class="score-label">😸 P1</span>
+          <span class="score-num" id="score-num-p1">0</span>
+        </div>
+        <div class="score-divider">vs</div>
+        <div class="player-score" id="score-p2">
+          <span class="score-num" id="score-num-p2">0</span>
+          <span class="score-label">P2 😼</span>
+        </div>
+      </div>
+      <div class="room-code-badge" id="badge-room-code"></div>
+    </div>
+
+    <canvas id="game-canvas"></canvas>
+
+    <div class="game-ui-bottom">
+      <span class="controls-hint-game">
+        <strong>P1:</strong> A/D + Space &nbsp;|&nbsp; <strong>P2:</strong> ← / → + ↑
+      </span>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       GAME OVER SCREEN
+  ════════════════════════════════════════════ -->
+  <div id="screen-gameover" class="screen">
+    <div class="gameover-container">
+      <div class="winner-emoji" id="winner-emoji">🏆</div>
+      <h2 class="winner-title" id="winner-title">Player 1 Wins!</h2>
+      <div class="final-scores" id="final-scores">0 – 0</div>
+      <div class="gameover-buttons">
+        <button class="btn btn-primary" id="btn-rematch">🔄 Rematch</button>
+        <button class="btn btn-secondary" id="btn-menu">🏠 Main Menu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       DISCONNECTED OVERLAY
+  ════════════════════════════════════════════ -->
+  <div id="overlay-disconnected" class="overlay hidden">
+    <div class="overlay-box">
+      <div class="overlay-emoji">😿</div>
+      <p>Opponent disconnected!</p>
+      <button class="btn btn-primary" id="btn-disc-menu">Back to Menu</button>
+    </div>
+  </div>
+
+  <script src="socket.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
