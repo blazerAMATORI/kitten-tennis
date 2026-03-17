@@ -1089,6 +1089,7 @@ const UIManager = (() => {
     SocketManager.on('ballUpdate', msg => game.onBallUpdate(msg));
     SocketManager.on('bounce',    msg => game.onBallBounce(msg));
     SocketManager.on('hit',       msg => game.onHit(msg));
+    SocketManager.on('serveCountdown', msg => game.onRespawn(msg));
     SocketManager.on('respawn',   msg => game.onRespawn(msg));
     SocketManager.on('score',     msg => game.onScore(msg));
     SocketManager.on('opponentMove', msg => game.onOpponentMove(msg));
