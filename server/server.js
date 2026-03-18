@@ -5,16 +5,18 @@ const fs = require('fs');
 
 const PORT = process.env.PORT || 3000;
 
+// ── Static file server ────────────────────────────────────────────────────────
+const MIME = {
+  '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon',
+};
+
 const server = http.createServer((req, res) => {
-  let filePath = path.join(__dirname, '../docs', req.url === '/' ? 'index.html' : req.url);
-  const ext = path.extname(filePath);
-  const mimeTypes = {
-    '.html':'text/html','.css':'text/css','.js':'application/javascript',
-    '.png':'image/png','.jpg':'image/jpeg','.gif':'image/gif','.ico':'image/x-icon',
-  };
-  fs.readFile(filePath, (err, data) => {
-    if (err) { res.writeHead(404); res.end('Not Found'); return; }
-    res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'text/plain' });
+  const url = req.url === '/' ? '/index.html' : req.url;
+  const file = path.join(__dirname, '../docs', url);
+  fs.readFile(file, (err, data) => {
+    if (err) { res.writeHead(404); res.end('Not found'); return; }
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'text/plain' });
     res.end(data);
   });
 });
@@ -22,218 +24,235 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocket.Server({ server });
 const rooms = new Map();
 
-const GW = 1280, GH = 720;
-const GROUND_Y  = GH - 80;
-const NET_X     = GW / 2;
-const NET_H     = 160;
-const BALL_R    = 22;
-const GRAVITY   = 500;
-const BOUNCE    = 0.82;
-const TICK_MS   = 1000 / 60;
-const WIN_SCORE = 12;
-const GOAL_W    = 28;
-const GOAL_TOP  = GROUND_Y - 100;
+// ── Physics constants (must match client!) ────────────────────────────────────
+const GW = 1280, GH = 720, GY = GH - 90;
+const NX = GW / 2, NH = 150;
+const BR = 22;
+const GRAV = 520, BOUNCE = 0.80;
+const GOAL_W = 32, GOAL_TOP = GY - 115;
+const WIN = 12;
+const TICK = 1000 / 60;
 
+// ── Room ──────────────────────────────────────────────────────────────────────
 class Room {
   constructor(code) {
     this.code = code;
-    this.players = [];
+    this.sockets = [];          // [ws0, ws1]
     this.nicks = ['Игрок 1', 'Игрок 2'];
     this.scores = [0, 0];
     this.hits = [0, 0];
-    this.ball = this.spawnBall(0);
+    this.ball = null;
     this.ballActive = false;
-    this.gameActive = false;
-    this.tickInterval = null;
     this.rallyCount = 0;
-    this.lastServeSide = 0;
+    this.interval = null;
+    this.alive = true;
   }
 
   spawnBall(side) {
     const dir = side === 0 ? 1 : -1;
-    return { x: GW/2, y: GROUND_Y - 200, vx: dir*260, vy: -280 };
+    // Spawn safely in centre, above ground
+    return { x: GW / 2, y: GY - 220, vx: dir * 260, vy: -300 };
   }
 
-  start() {
-    if (this.tickInterval) clearInterval(this.tickInterval);
-    this.gameActive = true;
+  startGame() {
+    if (this.interval) clearInterval(this.interval);
+    this.alive = true;
     this.ballActive = false;
     let last = Date.now();
-    this.tickInterval = setInterval(() => {
+    this.interval = setInterval(() => {
       const now = Date.now();
-      this.tick(Math.min((now-last)/1000, 0.05));
+      const dt = Math.min((now - last) / 1000, 0.05);
       last = now;
-    }, TICK_MS);
-    this.scheduleServe(this.lastServeSide, 3000);
+      this.tick(dt);
+    }, TICK);
+    // Ball launches after 3 second countdown
+    this.serveBall(0, 3000);
   }
 
-  scheduleServe(side, delay) {
+  serveBall(side, delay) {
     this.ballActive = false;
     this.ball = this.spawnBall(side);
-    this.broadcast({ type:'serveCountdown', delay, x:this.ball.x, y:this.ball.y });
+    this.broadcast({ type: 'countdown', ms: delay, bx: this.ball.x, by: this.ball.y });
     setTimeout(() => {
-      if (!this.gameActive) return;
+      if (!this.alive) return;
       this.ballActive = true;
-      this.broadcast({ type:'respawn', x:this.ball.x, y:this.ball.y, vx:this.ball.vx, vy:this.ball.vy });
+      this.broadcast({ type: 'serve', bx: this.ball.x, by: this.ball.y, vx: this.ball.vx, vy: this.ball.vy });
     }, delay);
   }
 
-  stop() {
-    if (this.tickInterval) { clearInterval(this.tickInterval); this.tickInterval = null; }
-    this.gameActive = false; this.ballActive = false;
+  stopGame() {
+    if (this.interval) { clearInterval(this.interval); this.interval = null; }
+    this.alive = false;
+    this.ballActive = false;
   }
 
   tick(dt) {
-    if (!this.gameActive || !this.ballActive) return;
+    if (!this.ballActive || !this.ball) return;
     const b = this.ball;
-    b.vy += GRAVITY * dt;
-    b.x  += b.vx * dt;
-    b.y  += b.vy * dt;
 
-    // Потолок
-    if (b.y - BALL_R <= 0) { b.y = BALL_R; b.vy = Math.abs(b.vy)*0.7; }
+    // Physics
+    b.vy += GRAV * dt;
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
 
-    // Земля
-    if (b.y + BALL_R >= GROUND_Y) {
-      b.y = GROUND_Y - BALL_R;
-      b.vy *= -BOUNCE; b.vx *= 0.97;
+    // Ceiling
+    if (b.y - BR < 0) { b.y = BR; b.vy = Math.abs(b.vy) * 0.7; }
+
+    // Ground bounce
+    if (b.y + BR > GY) {
+      b.y = GY - BR;
+      b.vy *= -BOUNCE;
+      b.vx *= 0.97;
       if (Math.abs(b.vy) < 30) b.vy = 0;
-      this.broadcast({ type:'bounce', kind:'ground', x:b.x, y:b.y });
+      this.broadcast({ type: 'bounce', kind: 'ground', bx: b.x, by: b.y });
     }
 
-    // Сетка
-    const netTop = GROUND_Y - NET_H;
-    if (b.x-BALL_R < NET_X+10 && b.x+BALL_R > NET_X-10 && b.y+BALL_R > netTop) {
-      b.x = b.vx>0 ? NET_X-10-BALL_R : NET_X+10+BALL_R;
-      b.vx *= -0.68;
-      this.broadcast({ type:'bounce', kind:'net', x:b.x, y:b.y });
+    // Net
+    const netTop = GY - NH;
+    if (b.x - BR < NX + 10 && b.x + BR > NX - 10 && b.y + BR > netTop) {
+      b.x = b.vx > 0 ? NX - 10 - BR : NX + 10 + BR;
+      b.vx *= -0.65;
+      this.broadcast({ type: 'bounce', kind: 'net', bx: b.x, by: b.y });
     }
 
-    // Игроки — круговая коллизия
-    this.players.forEach((ws, idx) => {
-      const pd = ws.playerData; if (!pd) return;
-      const dx = b.x - pd.x, dy = b.y - (pd.y - 10);
-      const dist = Math.sqrt(dx*dx + dy*dy);
-      const minDist = BALL_R + 28;
-      if (dist < minDist && dist > 0) {
-        const nx = dx/dist, ny = dy/dist;
-        b.x = pd.x + nx*(minDist+1);
-        b.y = (pd.y-10) + ny*(minDist+1);
-        const dot = b.vx*nx + b.vy*ny;
-        b.vx -= 2*dot*nx; b.vy -= 2*dot*ny;
-        const boost = 1.08 + Math.min(this.rallyCount*0.012, 0.3);
-        b.vx *= boost; b.vy = Math.min(b.vy*boost, -200);
-        if (idx===0 && b.vx < 80)  b.vx = 80 + Math.abs(b.vx);
-        if (idx===1 && b.vx > -80) b.vx = -(80 + Math.abs(b.vx));
-        b.vx = Math.max(-700, Math.min(700, b.vx));
-        b.vy = Math.max(-650, b.vy);
-        this.hits[idx]++;
+    // Player collisions (circle vs circle)
+    this.sockets.forEach((ws, i) => {
+      const p = ws.pd; if (!p) return;
+      const dx = b.x - p.x, dy = b.y - p.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const minD = BR + 30;
+      if (dist < minD && dist > 0) {
+        const nx = dx / dist, ny = dy / dist;
+        // Push ball out
+        b.x = p.x + nx * (minD + 1);
+        b.y = p.y + ny * (minD + 1);
+        // Reflect
+        const dot = b.vx * nx + b.vy * ny;
+        b.vx -= 2 * dot * nx;
+        b.vy -= 2 * dot * ny;
+        // Boost
+        const boost = 1.08 + Math.min(this.rallyCount * 0.012, 0.28);
+        b.vx *= boost;
+        b.vy = Math.min(b.vy * boost, -190);
+        // Always send toward opponent
+        if (i === 0 && b.vx < 60) b.vx = 60 + Math.abs(b.vx);
+        if (i === 1 && b.vx > -60) b.vx = -(60 + Math.abs(b.vx));
+        // Speed cap
+        b.vx = Math.max(-680, Math.min(680, b.vx));
         this.rallyCount++;
-        this.broadcast({ type:'hit', player:idx, x:b.x, y:b.y, rally:this.rallyCount });
+        this.hits[i]++;
+        this.broadcast({ type: 'hit', player: i, bx: b.x, by: b.y, rally: this.rallyCount });
       }
     });
 
-    // Левая стена
-    if (b.x - BALL_R <= GOAL_W) {
-      if (b.y > GOAL_TOP) {
-        // Гол — но только если НЕ P1 последний касался (антисамогол)
-        this.score(1); return;
-      } else {
-        b.x = GOAL_W + BALL_R; b.vx = Math.abs(b.vx)*0.82;
-        this.broadcast({ type:'bounce', kind:'wall', x:b.x, y:b.y });
-      }
-    }
+    // ── Goals ──
+    // Left goal: ball touches left wall in goal zone → P2 scores
+    if (b.x - BR <= GOAL_W && b.y > GOAL_TOP) { this.goal(1); return; }
+    // Left wall above goal → bounce
+    if (b.x - BR <= GOAL_W) { b.x = GOAL_W + BR; b.vx = Math.abs(b.vx) * 0.82; }
 
-    // Правая стена
-    if (b.x + BALL_R >= GW - GOAL_W) {
-      if (b.y > GOAL_TOP) {
-        this.score(0); return;
-      } else {
-        b.x = GW - GOAL_W - BALL_R; b.vx = -Math.abs(b.vx)*0.82;
-        this.broadcast({ type:'bounce', kind:'wall', x:b.x, y:b.y });
-      }
-    }
+    // Right goal: ball touches right wall in goal zone → P1 scores
+    if (b.x + BR >= GW - GOAL_W && b.y > GOAL_TOP) { this.goal(0); return; }
+    // Right wall above goal → bounce
+    if (b.x + BR >= GW - GOAL_W) { b.x = GW - GOAL_W - BR; b.vx = -Math.abs(b.vx) * 0.82; }
 
-    this.broadcast({ type:'ballUpdate', x:b.x, y:b.y, vx:b.vx, vy:b.vy, t:Date.now() });
+    this.broadcast({ type: 'ball', bx: b.x, by: b.y, vx: b.vx, vy: b.vy, t: Date.now() });
   }
 
-  score(scorer) {
-    this.ballActive = false; this.rallyCount = 0;
+  goal(scorer) {
+    this.ballActive = false;
+    this.rallyCount = 0;
     this.scores[scorer]++;
-    this.broadcast({ type:'score', scores:this.scores, scorer, hits:this.hits });
-    if (this.scores[scorer] >= WIN_SCORE) {
-      this.stop();
-      this.broadcast({ type:'gameOver', winner:scorer, scores:this.scores, hits:this.hits, nicks:this.nicks });
+    this.broadcast({ type: 'score', scores: this.scores, scorer });
+
+    if (this.scores[scorer] >= WIN) {
+      this.stopGame();
+      this.broadcast({ type: 'gameover', winner: scorer, scores: this.scores, hits: this.hits, nicks: this.nicks });
       return;
     }
-    this.lastServeSide = 1 - scorer;
-    this.scheduleServe(this.lastServeSide, 3000);
+    // Loser serves after 3s
+    this.serveBall(1 - scorer, 3000);
   }
 
   broadcast(msg) {
-    const d = JSON.stringify(msg);
-    this.players.forEach(ws => { if (ws.readyState===WebSocket.OPEN) ws.send(d); });
+    const s = JSON.stringify(msg);
+    this.sockets.forEach(ws => { if (ws.readyState === WebSocket.OPEN) ws.send(s); });
   }
-  sendTo(idx, msg) {
-    const ws = this.players[idx];
-    if (ws && ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify(msg));
+
+  send(idx, msg) {
+    const ws = this.sockets[idx];
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
   }
 }
 
-function genCode() {
-  const ch='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let code;
-  do { code='KITTEN'+Array.from({length:3},()=>ch[Math.floor(Math.random()*ch.length)]).join(''); }
-  while(rooms.has(code)); return code;
+// ── Room code generator ───────────────────────────────────────────────────────
+function makeCode() {
+  const ch = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let c;
+  do { c = 'CAT' + Array.from({ length: 4 }, () => ch[Math.floor(Math.random() * ch.length)]).join(''); }
+  while (rooms.has(c));
+  return c;
 }
 
+// ── WebSocket handler ─────────────────────────────────────────────────────────
 wss.on('connection', ws => {
-  ws.playerData = { x:200, y:GROUND_Y-40 };
-  ws.roomCode = null; ws.playerIndex = -1;
+  ws.pd = { x: 200, y: GY - 40 };
 
   ws.on('message', raw => {
-    let msg; try { msg=JSON.parse(raw); } catch { return; }
-    switch(msg.type) {
-      case 'createRoom': {
-        const code=genCode(), room=new Room(code);
-        rooms.set(code,room);
-        if (msg.nick) room.nicks[0] = msg.nick.slice(0,16)||'Игрок 1';
-        ws.playerData.x=220; ws.playerData.y=GROUND_Y-40;
-        room.players.push(ws); ws.roomCode=code; ws.playerIndex=0;
-        ws.send(JSON.stringify({type:'roomCreated',code,playerIndex:0,nick:room.nicks[0]}));
-        console.log('Room:',code); break;
-      }
-      case 'joinRoom': {
-        const code=(msg.code||'').toUpperCase().trim(), room=rooms.get(code);
-        if (!room){ws.send(JSON.stringify({type:'error',message:'Комната не найдена!'}));return;}
-        if (room.players.length>=2){ws.send(JSON.stringify({type:'error',message:'Комната полная!'}));return;}
-        if (msg.nick) room.nicks[1] = msg.nick.slice(0,16)||'Игрок 2';
-        ws.playerData.x=GW-220; ws.playerData.y=GROUND_Y-40;
-        room.players.push(ws); ws.roomCode=code; ws.playerIndex=1;
-        ws.send(JSON.stringify({type:'roomJoined',code,playerIndex:1,nick:room.nicks[1]}));
-        room.sendTo(0,{type:'opponentJoined',nick:room.nicks[1]});
-        room.start();
-        room.broadcast({type:'gameStart',scores:[0,0],nicks:room.nicks});
-        console.log('Game started:',code); break;
-      }
-      case 'playerMove': {
-        if (!ws.roomCode) return;
-        const room=rooms.get(ws.roomCode); if (!room) return;
-        ws.playerData.x=msg.x; ws.playerData.y=msg.y;
-        room.sendTo(1-ws.playerIndex,{type:'opponentMove',x:msg.x,y:msg.y,state:msg.state,facing:msg.facing}); break;
-      }
-      case 'rematch': {
-        if (!ws.roomCode) return;
-        const room=rooms.get(ws.roomCode); if (!room) return;
-        room.scores=[0,0]; room.hits=[0,0]; room.rallyCount=0; room.lastServeSide=0;
-        room.start(); room.broadcast({type:'gameStart',scores:[0,0],nicks:room.nicks}); break;
-      }
+    let m; try { m = JSON.parse(raw); } catch { return; }
+
+    if (m.type === 'create') {
+      const code = makeCode();
+      const room = new Room(code);
+      rooms.set(code, room);
+      ws.room = room;
+      ws.pi = 0;
+      ws.pd.x = 220;
+      room.sockets[0] = ws;
+      if (m.nick) room.nicks[0] = m.nick.slice(0, 16);
+      ws.send(JSON.stringify({ type: 'created', code, pi: 0, nick: room.nicks[0] }));
+      console.log('Room created:', code);
+    }
+
+    else if (m.type === 'join') {
+      const code = (m.code || '').toUpperCase().trim();
+      const room = rooms.get(code);
+      if (!room) { ws.send(JSON.stringify({ type: 'err', msg: 'Комната не найдена!' })); return; }
+      if (room.sockets.length >= 2 && room.sockets[1]) { ws.send(JSON.stringify({ type: 'err', msg: 'Комната занята!' })); return; }
+      ws.room = room;
+      ws.pi = 1;
+      ws.pd.x = GW - 220;
+      room.sockets[1] = ws;
+      if (m.nick) room.nicks[1] = m.nick.slice(0, 16);
+      // Tell P2
+      ws.send(JSON.stringify({ type: 'joined', code, pi: 1, nicks: room.nicks }));
+      // Tell P1 opponent arrived
+      room.send(0, { type: 'opponent', nick: room.nicks[1] });
+      // Start!
+      room.startGame();
+      room.broadcast({ type: 'start', nicks: room.nicks, scores: [0, 0] });
+      console.log('Game started:', code);
+    }
+
+    else if (m.type === 'move') {
+      if (!ws.room) return;
+      ws.pd.x = m.x; ws.pd.y = m.y;
+      ws.room.send(1 - ws.pi, { type: 'pmove', pi: ws.pi, x: m.x, y: m.y, state: m.state, facing: m.facing });
+    }
+
+    else if (m.type === 'rematch') {
+      if (!ws.room) return;
+      ws.room.scores = [0, 0]; ws.room.hits = [0, 0]; ws.room.rallyCount = 0;
+      ws.room.startGame();
+      ws.room.broadcast({ type: 'start', nicks: ws.room.nicks, scores: [0, 0] });
     }
   });
 
   ws.on('close', () => {
-    if (!ws.roomCode) return;
-    const room=rooms.get(ws.roomCode); if (!room) return;
-    room.stop(); room.broadcast({type:'opponentLeft'}); rooms.delete(ws.roomCode);
+    if (!ws.room) return;
+    ws.room.stopGame();
+    ws.room.broadcast({ type: 'left' });
+    rooms.delete(ws.room.code);
   });
 });
 

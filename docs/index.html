@@ -1,50 +1,81 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>🐱 Kitten Tennis Pro</title>
-  <link rel="stylesheet" href="style.css"/>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>🐱 Kitten Tennis</title>
+<link rel="stylesheet" href="style.css"/>
 </head>
 <body>
 
-<div id="screen-menu" class="screen active">
-  <div class="menu-container">
-    <div class="game-title"><h1>🐾 Kitten Tennis 🎾</h1></div>
-    <div class="nick-row">
-      <input type="text" id="nick-input" placeholder="Твой ник..." maxlength="12" />
+<!-- MENU -->
+<div id="s-menu" class="screen active">
+  <div class="card">
+    <div class="logo">🐾 Kitten Tennis 🎾</div>
+    <p class="sub">Милый теннис для двоих!</p>
+    <div class="field">
+      <label>Твой ник</label>
+      <input id="inp-nick" type="text" maxlength="14" placeholder="Введи ник..." autocomplete="off"/>
     </div>
-    
-    <div class="skin-select">
-      <p>Выбери кота:</p>
-      <div class="skin-options">
-        <div class="skin-opt active" data-skin="gray">🔘</div>
-        <div class="skin-opt" data-skin="black">⚫</div>
-        <div class="skin-opt" data-skin="orange">🟠</div>
-        <div class="skin-opt" data-skin="white">⚪</div>
-      </div>
+    <button class="btn pink" id="btn-create">🏠 Создать комнату</button>
+    <button class="btn teal" id="btn-join-show">🔗 Войти в комнату</button>
+    <div id="join-box" class="hidden">
+      <input id="inp-code" type="text" maxlength="10" placeholder="Код комнаты (CATXXXX)" autocomplete="off"/>
+      <button class="btn orange" id="btn-join">🐾 Войти!</button>
+      <p id="join-err" class="err hidden"></p>
     </div>
+    <div id="wait-box" class="wait-box hidden">
+      <p class="wlabel">Скинь код другу:</p>
+      <div class="code-show" id="code-show">...</div>
+      <button class="btn small" id="btn-copy">📋 Скопировать</button>
+      <div class="waiting">Ждём соперника<span class="dots"></span></div>
+    </div>
+    <p class="hint">P1: A/D + Пробел (прыжок) + S (вниз) &nbsp;|&nbsp; P2: ←/→ + ↑ + ↓</p>
+  </div>
+  <div class="dcat left">🐱</div>
+  <div class="dcat right">😺</div>
+</div>
 
-    <div class="menu-buttons">
-      <button class="btn btn-primary" id="btn-create">Создать лобби</button>
-      <button class="btn btn-secondary" id="btn-bot">Играть с ботом 🤖</button>
-      <button class="btn btn-accent" id="btn-join-toggle">Ввести код</button>
+<!-- GAME -->
+<div id="s-game" class="screen">
+  <div class="hud">
+    <div class="scores">
+      <span class="sname" id="sn1">😸 P1</span>
+      <span class="snum" id="sc1">0</span>
+      <span class="sdiv">vs</span>
+      <span class="snum" id="sc2">0</span>
+      <span class="sname" id="sn2">P2 😼</span>
     </div>
-    <div id="join-form" class="join-form hidden">
-      <input type="text" id="room-code-input" placeholder="Код..." />
-      <button class="btn" id="btn-join-confirm">🐾 Го!</button>
-    </div>
+    <div class="combo hidden" id="combo">🔥 x1</div>
+    <div class="roomcode" id="roomcode"></div>
+  </div>
+  <div class="cvwrap">
+    <canvas id="cv"></canvas>
+  </div>
+  <div class="hint2">P1: A/D + Пробел + S(вниз) &nbsp;|&nbsp; P2: ←/→ + ↑ + ↓(вниз)</div>
+</div>
+
+<!-- GAMEOVER -->
+<div id="s-over" class="screen">
+  <canvas id="confetti" style="position:absolute;inset:0;pointer-events:none"></canvas>
+  <div class="over-card">
+    <div class="emo" id="emo">🏆</div>
+    <h2 id="over-title">Победа!</h2>
+    <div class="over-phrase" id="over-phrase"></div>
+    <div class="over-score" id="over-score">0 – 0</div>
+    <div class="over-stats" id="over-stats"></div>
+    <button class="btn pink" id="btn-rematch">🔄 Реванш</button>
+    <button class="btn teal" id="btn-tomenu">🏠 Меню</button>
   </div>
 </div>
 
-<div id="screen-game" class="screen">
-  <div class="game-ui">
-    <div class="score-board">
-      <span id="score-p1">0</span> : <span id="score-p2">0</span>
-    </div>
-    <div id="combo-badge" class="hidden">🔥 x0</div>
+<!-- DISCONNECTED -->
+<div id="s-disc" class="overlay hidden">
+  <div class="card small-card">
+    <div style="font-size:52px">😿</div>
+    <p>Соперник отключился!</p>
+    <button class="btn pink" id="btn-disc">В меню</button>
   </div>
-  <canvas id="game-canvas"></canvas>
 </div>
 
 <script src="socket.js"></script>
