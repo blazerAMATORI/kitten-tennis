@@ -1,11 +1,19 @@
 {
   "name": "kitten-tennis",
-  "version": "2.0.0",
+  "version": "2.1.0",
+  "description": "Cute multiplayer tennis game 🐱🎾",
   "main": "server/server.js",
   "scripts": {
-    "start": "node server/server.js"
+    "start": "node server/server.js",
+    "dev": "node server/server.js"
   },
+  "keywords": ["tennis", "game", "multiplayer", "websocket"],
+  "author": "",
+  "license": "MIT",
   "dependencies": {
     "ws": "^8.14.2"
+  },
+  "engines": {
+    "node": ">=14.0.0"
   }
 }

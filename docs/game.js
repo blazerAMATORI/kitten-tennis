@@ -5,12 +5,26 @@
 // ══════════════════════════════════════════════════════════════════════════════
 const GW = 1280, GH = 720, GY = GH - 90;
 const NX = GW / 2, NH = 150;
-const BR = 22;
-const GRAV = 520, BOUNCE = 0.80;
-const P_SPD = 310, P_JUMP = -580, P_FALL = 680;
+const BR = 28;  // ИСПРАВЛЕНО: Мяч теперь больше (было 22)
+const GRAV = 520, BOUNCE = 0.78;
+const P_SPD = 310, P_JUMP = -450, P_FALL = 680;  // ИСПРАВЛЕНО: Прыжок меньше (было -580)
 const GOAL_W = 32, GOAL_TOP = GY - 115;
 const WIN = 12;
-const STEP = 1 / 60;  // fixed physics step
+const STEP = 1 / 60;
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  SKINS (Скины для персонажей)
+// ══════════════════════════════════════════════════════════════════════════════
+const SKINS = {
+  cat1: { name: '😸 Кот', color: '#f4a460', eye: '#000' },
+  cat2: { name: '😺 Улыбка', color: '#e8b75f', eye: '#008000' },
+  cat3: { name: '😻 Влюблённый', color: '#ff69b4', eye: '#ff1493' },
+  dog: { name: '🐕 Щенок', color: '#8b4513', eye: '#ffb347' },
+  panda: { name: '🐼 Панда', color: '#000', eye: '#fff' },
+};
+
+let CURRENT_SKINS = { 0: 'cat1', 1: 'cat2' };  // Выбранные скины по умолчанию
+let IS_BOT_MODE = false;  // Режим с ботом
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  WIN PHRASES
@@ -32,7 +46,6 @@ function getPhrase(w, l) {
     .replace(/{W}/g, w).replace(/{L}/g, l);
 }
 
-// Global nicks (updated from server)
 let NICKS = ['Игрок 1', 'Игрок 2'];
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -213,203 +226,95 @@ class Background {
       c.beginPath(); c.moveTo(x, GY - 4); c.lineTo(x, GH); c.stroke();
     });
     c.setLineDash([]);
-    c.fillStyle = 'rgba(255,255,255,.28)'; c.font = 'bold 15px Nunito,Arial,sans-serif';
-    c.textAlign = 'center';
-    c.fillText('P1', GW * .22, GY + 32); c.fillText('P2', GW * .78, GY + 32);
   }
 
-  draw(ctx) { ctx.drawImage(this.oc, 0, 0); }
+  draw(ctx) {
+    ctx.drawImage(this.oc, 0, 0);
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  PLAYER
 // ══════════════════════════════════════════════════════════════════════════════
 class Player {
-  constructor(idx, local) {
-    this.idx = idx; this.local = local;
-    this.x = idx === 0 ? 220 : GW - 220;
-    this.y = GY - 40;
-    this.vx = 0; this.vy = 0;
-    this.ground = true; this.facing = idx === 0 ? 1 : -1;
-    this.state = 'idle'; this.hitT = 0; this.jumpT = 0;
-    this.bobT = 0; this.bob = 0;
-    this.trail = [];
-    // Remote interpolation
-    this.tx = this.x; this.ty = this.y;
-    this.tState = 'idle'; this.tFacing = this.facing;
+  constructor(x, y, skinKey = 'cat1') {
+    this.x = x; this.y = y; this.vx = 0; this.vy = 0;
+    this.w = 30; this.h = 50;
+    this.onGround = false;
+    this.state = 'idle'; this.facing = 1;
+    this.hitT = 0;
+    this.tx = x; this.ty = y; this.tState = 'idle'; this.tFacing = 1;
+    this.skinKey = skinKey;
   }
 
-  input(keys, dt, ps) {
-    if (!this.local) return;
-    const LEFT  = this.idx === 0 ? 'a' : 'ArrowLeft';
-    const RIGHT = this.idx === 0 ? 'd' : 'ArrowRight';
-    const JUMP  = this.idx === 0 ? ' ' : 'ArrowUp';
-    const DOWN  = this.idx === 0 ? 's' : 'ArrowDown';
-
-    // Horizontal move
-    let mv = 0;
-    if (keys[LEFT])  { mv = -1; this.facing = -1; }
-    if (keys[RIGHT]) { mv =  1; this.facing =  1; }
-    this.vx = mv * P_SPD;
-    if (!mv) this.vx *= .7;
-
-    // Jump
-    if (keys[JUMP] && this.ground && this.jumpT <= 0) {
-      this.vy = P_JUMP;
-      this.ground = false;
-      this.jumpT = .28;
-      SFX.play('jump');
-      ps.dust(this.x, GY, 10);
-    }
-
-    // Fast fall  ← S or ↓ while in air
-    if (keys[DOWN] && !this.ground) {
-      this.vy += P_FALL * dt;
-    }
-
-    this.jumpT = Math.max(0, this.jumpT - dt);
+  setTarget(tx, ty, state, facing) {
+    this.tx = tx; this.ty = ty; this.tState = state; this.tFacing = facing;
   }
 
-  update(dt) {
-    if (!this.local) {
-      // Remote: smooth interpolation
-      const s = Math.min(1, dt * 18);
-      this.x += (this.tx - this.x) * s;
-      this.y += (this.ty - this.y) * s;
-      this.state = this.tState;
-      this.facing = this.tFacing;
-    } else {
-      if (!this.ground) this.vy += GRAV * dt;
-      this.x += this.vx * dt;
-      this.y += this.vy * dt;
+  triggerHit() { this.hitT = 0.15; }
 
-      // Ground
-      if (this.y >= GY - 40) { this.y = GY - 40; this.vy = 0; this.ground = true; }
+  update(dt, keys) {
+    // Smooth lerp to target
+    const lerpSpeed = 0.2;
+    this.x += (this.tx - this.x) * lerpSpeed;
+    this.y += (this.ty - this.y) * lerpSpeed;
+    this.state = this.tState;
+    this.facing = this.tFacing;
 
-      // Net wall
-      const hw = 28;
-      if (this.idx === 0) this.x = Math.max(GOAL_W + hw, Math.min(NX - 12 - hw, this.x));
-      else                this.x = Math.min(GW - GOAL_W - hw, Math.max(NX + 12 + hw, this.x));
+    // Ground detection
+    this.onGround = this.y + this.h / 2 >= GY - 10;
 
-      this.hitT  = Math.max(0, this.hitT  - dt);
-      this.jumpT = Math.max(0, this.jumpT - dt);
-      this.state = !this.ground ? 'jump' : this.hitT > 0 ? 'hit' : Math.abs(this.vx) > 25 ? 'run' : 'idle';
-      if (this.state === 'idle') { this.bobT += dt; this.bob = Math.sin(this.bobT * 2.8) * 2.5; }
-      else this.bob = 0;
-    }
+    // Gravity
+    if (!this.onGround) this.vy += GRAV * dt;
+    else this.vy = Math.max(this.vy, 0);
 
-    // Trail
-    this.trail.unshift({ x: this.x, y: this.y });
-    if (this.trail.length > 10) this.trail.pop();
+    this.y += this.vy * dt;
+
+    // Clamp to ground
+    if (this.y + this.h / 2 > GY) { this.y = GY - this.h / 2; this.vy = 0; this.onGround = true; }
+
+    // Clamp to bounds
+    this.x = Math.max(this.w / 2, Math.min(GW - this.w / 2, this.x));
+
+    this.hitT = Math.max(0, this.hitT - dt);
   }
-
-  triggerHit() { this.hitT = .28; }
 
   draw(ctx) {
-    const blk = this.idx === 1;
-    let scX = 1, scY = 1;
-    if (this.state === 'jump') { scX = .86; scY = 1.17; }
-
-    // Trail
-    this.trail.forEach((t, i) => {
-      ctx.save(); ctx.globalAlpha = .26 * (1 - i / 10);
-      ctx.fillStyle = blk ? '#3a2a6e' : '#8888b8';
-      ctx.beginPath();
-      ctx.ellipse(t.x, t.y, 13 * (1 - i / 10), 17 * (1 - i / 10), 0, 0, Math.PI * 2);
-      ctx.fill(); ctx.restore();
-    });
-
+    const skin = SKINS[this.skinKey] || SKINS.cat1;
     ctx.save();
-    ctx.translate(Math.round(this.x), Math.round(this.y + this.bob));
-    ctx.scale(this.facing * scX, scY);
-    this._cat(ctx, blk);
+    ctx.translate(this.x, this.y);
+
     if (this.hitT > 0) {
-      ctx.globalAlpha = this.hitT;
-      ctx.strokeStyle = '#ff3344'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(0, 0, 32, 0, Math.PI * 2); ctx.stroke();
+      const scale = 1 + this.hitT * 0.3;
+      ctx.scale(scale, scale);
     }
-    ctx.restore();
-
-    // Nick above cat
-    ctx.save();
-    ctx.font = 'bold 13px Nunito,Arial,sans-serif';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-    ctx.fillStyle = this.idx === 0 ? '#FF6B9D' : '#4ECDC4';
-    ctx.shadowColor = 'rgba(0,0,0,.4)'; ctx.shadowBlur = 4;
-    ctx.fillText(NICKS[this.idx] || 'P' + (this.idx + 1), Math.round(this.x), Math.round(this.y + this.bob - 50));
-    ctx.restore();
-  }
-
-  _cat(ctx, blk) {
-    const BC = blk ? '#1c1c30' : '#909098';
-    const HC = blk ? '#28283e' : '#b0b0c0';
-
-    // Under shadow
-    ctx.save(); ctx.globalAlpha = .15; ctx.fillStyle = '#000';
-    ctx.beginPath(); ctx.ellipse(0, 33, 20, 5, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
 
     // Body
-    ctx.fillStyle = BC;
-    ctx.beginPath(); ctx.ellipse(0, 8, 21, 25, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = skin.color;
+    ctx.fillRect(-this.w / 2, -this.h / 2, this.w, this.h);
 
     // Head
-    ctx.fillStyle = HC;
-    ctx.beginPath(); ctx.ellipse(0, -20, 20, 18, 0, 0, Math.PI * 2); ctx.fill();
-
-    // Ears
-    [[-13, -34, -8, -19, -20, -19], [13, -34, 20, -19, 8, -19]].forEach(([ax, ay, bx, by, cx, cy]) => {
-      ctx.fillStyle = HC;
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.lineTo(cx, cy); ctx.fill();
-    });
-    [[-11, -31, -9, -21, -16, -21], [11, -31, 16, -21, 9, -21]].forEach(([ax, ay, bx, by, cx, cy]) => {
-      ctx.fillStyle = '#ffb3c6';
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.lineTo(cx, cy); ctx.fill();
-    });
+    ctx.beginPath();
+    ctx.arc(0, -this.h / 2 - 8, 14, 0, Math.PI * 2);
+    ctx.fill();
 
     // Eyes
-    ctx.fillStyle = blk ? '#f5c542' : '#5bc8f5';
-    ctx.beginPath(); ctx.ellipse(-7, -21, 5, 6, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(7, -21, 5, 6, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#111';
-    ctx.beginPath(); ctx.ellipse(-7, -21, 2.5, 4, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(7, -21, 2.5, 4, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,.75)';
-    ctx.beginPath(); ctx.arc(-5, -23, 1.5, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(9, -23, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = skin.eye;
+    ctx.beginPath();
+    ctx.arc(-6, -this.h / 2 - 10, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(6, -this.h / 2 - 10, 3, 0, Math.PI * 2);
+    ctx.fill();
 
-    // Nose
-    ctx.fillStyle = '#ff9eb5';
-    ctx.beginPath(); ctx.arc(0, -14, 2.5, 0, Math.PI * 2); ctx.fill();
-
-    // Mouth
-    ctx.strokeStyle = 'rgba(80,30,30,.4)'; ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.moveTo(0, -11); ctx.lineTo(-4, -8); ctx.moveTo(0, -11); ctx.lineTo(4, -8); ctx.stroke();
-
-    // Whiskers
-    ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1;
-    [[-3, -13, -18, -10], [-3, -13, -18, -15], [3, -13, 18, -10], [3, -13, 18, -15]].forEach(([x1, y1, x2, y2]) => {
-      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-    });
-
-    // Tail
-    ctx.strokeStyle = BC; ctx.lineWidth = 7; ctx.lineCap = 'round';
-    const tw = Math.sin(Date.now() / 200) * 9;
-    ctx.beginPath(); ctx.moveTo(16, 22);
-    ctx.bezierCurveTo(33, 12, 42, -4 + tw, 29, -18 + tw);
+    // Smile
+    ctx.strokeStyle = skin.eye;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, -this.h / 2 - 7, 4, 0, Math.PI);
     ctx.stroke();
 
-    // Paws
-    ctx.fillStyle = blk ? '#2a2a40' : '#aaaabc';
-    ctx.beginPath(); ctx.ellipse(-12, 31, 9, 6, -.2, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(12, 31, 9, 6, .2, 0, Math.PI * 2); ctx.fill();
-
-    // Stripes (gray only)
-    if (!blk) {
-      ctx.strokeStyle = 'rgba(80,80,100,.38)'; ctx.lineWidth = 2.5;
-      [[-18, -7, -13, 3], [-13, -9, -9, 1]].forEach(([x1, y1, x2, y2]) => {
-        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-      });
-    }
+    ctx.restore();
   }
 }
 
@@ -418,189 +323,219 @@ class Player {
 // ══════════════════════════════════════════════════════════════════════════════
 class Ball {
   constructor() {
-    this.x = GW / 2; this.y = GY - 220;  // safe spawn above ground
-    this.vx = 260; this.vy = -260;
-    this.tx = this.x; this.ty = this.y; this.tvx = this.vx; this.tvy = this.vy;
-    this.rot = 0; this.visible = true; this.trail = [];
+    this.x = GW / 2; this.y = GY - 220;
+    this.vx = 0; this.vy = 0;
+    this.visible = false;
+    this.tx = this.x; this.ty = this.y; this.tvx = 0; this.tvy = 0;
   }
 
-  setTarget(x, y, vx, vy) { this.tx = x; this.ty = y; this.tvx = vx; this.tvy = vy; }
+  setTarget(tx, ty, tvx, tvy) {
+    this.tx = tx; this.ty = ty; this.tvx = tvx; this.tvy = tvy;
+  }
 
   teleport(x, y, vx, vy) {
-    // Always spawn at safe height
-    const sy = Math.min(y, GY - 200);
-    this.x = x; this.y = sy; this.vx = vx; this.vy = vy;
-    this.tx = x; this.ty = sy; this.tvx = vx; this.tvy = vy;
-    this.trail = [];
+    this.x = this.tx = x; this.y = this.ty = y;
+    this.vx = this.tvx = vx; this.vy = this.tvy = vy;
   }
 
   update(dt) {
     if (!this.visible) return;
-    const l = Math.min(1, dt * 16);
-    this.x += (this.tx - this.x) * l;
-    this.y += (this.ty - this.y) * l;
-    this.vx += (this.tvx - this.vx) * l;
-    this.vy += (this.tvy - this.vy) * l;
-    // Hard clamp — never below ground
-    if (this.y > GY - BR) this.y = GY - BR;
-    if (this.ty > GY - BR) this.ty = GY - BR;
-    this.rot += this.vx * dt * .055;
-    this.trail.unshift({ x: this.x, y: this.y });
-    if (this.trail.length > 12) this.trail.pop();
+    const lerpSpeed = 0.12;
+    this.x += (this.tx - this.x) * lerpSpeed;
+    this.y += (this.ty - this.y) * lerpSpeed;
+    this.vx += (this.tvx - this.vx) * lerpSpeed;
+    this.vy += (this.tvy - this.vy) * lerpSpeed;
   }
 
   draw(ctx) {
     if (!this.visible) return;
-    const spd = Math.abs(this.vx) + Math.abs(this.vy);
-    const hot = spd > 700;
-
-    // Trail
-    this.trail.forEach((t, i) => {
-      const a = (1 - i / this.trail.length) * .35;
-      ctx.save(); ctx.globalAlpha = a;
-      ctx.fillStyle = hot ? `hsl(${30 - i * 3},100%,55%)` : '#b8e020';
-      ctx.beginPath(); ctx.arc(Math.round(t.x), Math.round(t.y), Math.max(2, BR * (1 - i * .07)), 0, Math.PI * 2);
-      ctx.fill(); ctx.restore();
-    });
-
-    // Ground shadow
-    const sa = Math.max(0, .2 * (1 - (GY - this.y) / GH));
-    ctx.save(); ctx.globalAlpha = sa;
-    ctx.fillStyle = 'rgba(0,0,0,.3)';
-    ctx.beginPath(); ctx.ellipse(Math.round(this.x), GY, BR * .82, 4, 0, 0, Math.PI * 2);
-    ctx.fill(); ctx.restore();
-
-    // Ball
     ctx.save();
-    ctx.translate(Math.round(this.x), Math.round(this.y));
-    ctx.rotate(this.rot);
-    if (hot) { ctx.shadowColor = '#ff8800'; ctx.shadowBlur = 22; }
-    ctx.fillStyle = hot ? '#ff9922' : '#c8e830';
-    ctx.beginPath(); ctx.arc(0, 0, BR, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.arc(0, 0, BR, -.6, .6); ctx.stroke();
-    ctx.beginPath(); ctx.arc(0, 0, BR, Math.PI - .6, Math.PI + .6); ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,.4)';
-    ctx.beginPath(); ctx.ellipse(-4, -4, 5, 3, -.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffff00';
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, BR, 0, Math.PI * 2);
+    ctx.fill();
+    // Блеск
+    ctx.fillStyle = 'rgba(255,255,255,.5)';
+    ctx.beginPath();
+    ctx.arc(this.x - BR / 3, this.y - BR / 3, BR / 3, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
   }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-//  GAME  (main controller)
+//  GAME
 // ══════════════════════════════════════════════════════════════════════════════
 class Game {
   constructor(cv) {
-    this.cv = cv; this.ctx = cv.getContext('2d');
-    this.cv.width = GW; this.cv.height = GH;
-    this.players = [null, null];
-    this.ball = new Ball();
-    this.ps = new Particles();
+    this.cv = cv;
+    this.ctx = cv.getContext('2d', { alpha: false });
+    cv.width = GW; cv.height = GH;
+
     this.bg = new Background();
-    this.localIdx = -1; this.room = '';
-    this.state = 'idle';
-    this.keys = {};
-    this.respawnT = 0;
-    this.scoreFlash = { on: false, t: 0, who: 0 };
-    this.rally = 0;
-    this.lastSend = 0;
-    this.raf = null;
-    this.prevT = 0; this.lag = 0;
-    this.combo = document.getElementById('combo');
-    this._bindKeys();
-  }
-
-  _bindKeys() {
-    window.addEventListener('keydown', e => {
-      this.keys[e.key] = true;
-      if ([' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) e.preventDefault();
-    });
-    window.addEventListener('keyup', e => { delete this.keys[e.key]; });
-  }
-
-  start(localIdx, room) {
-    this.localIdx = localIdx; this.room = room;
-    this.state = 'playing'; this.rally = 0;
-    this.players[0] = new Player(0, localIdx === 0);
-    this.players[1] = new Player(1, localIdx === 1);
     this.ball = new Ball();
+    this.players = [null, null];
     this.ps = new Particles();
-    document.getElementById('roomcode').textContent = room;
-    this.prevT = performance.now(); this.lag = 0;
-    if (this.raf) cancelAnimationFrame(this.raf);
-    this._loop();
+
+    this.localIdx = 0;
+    this.roomCode = '';
+    this.scores = [0, 0];
+    this.combo = document.getElementById('combo');
+    this.rally = 0;
+    this.respawnT = 0;
+    this.scoreFlash = { on: false, t: 0, who: -1 };
+    this.running = false;
+    this.lastT = Date.now();
+
+    this._keyState = {};
+    this._setupKeys();
+    this._setupLoop();
   }
 
-  stop() {
-    this.state = 'idle';
-    if (this.raf) { cancelAnimationFrame(this.raf); this.raf = null; }
+  _setupKeys() {
+    // ИСПРАВЛЕНО: Поддержка русской раскладки и стандартных клавиш
+    const keyMap = {
+      // P1: A/D (или Ф/В на русской раскладке)
+      'a': 'left', 'ф': 'left',
+      'd': 'right', 'в': 'right',
+      ' ': 'jump',
+      's': 'down', 'ы': 'down',
+      // P2: стрелки
+      'arrowleft': 'left', 'arrowright': 'right', 'arrowup': 'jump', 'arrowdown': 'down',
+    };
+
+    const handleKey = (e, down) => {
+      const key = e.key.toLowerCase();
+      const action = keyMap[key];
+      if (action) {
+        this._keyState[action] = down;
+        e.preventDefault();
+      }
+    };
+
+    window.addEventListener('keydown', e => handleKey(e, true));
+    window.addEventListener('keyup', e => handleKey(e, false));
   }
 
-  // Fixed-timestep game loop
-  _loop() {
-    this.raf = requestAnimationFrame(ts => {
-      const elapsed = Math.min(ts - this.prevT, 200);
-      this.prevT = ts;
-      if (this.state === 'playing') {
-        this.lag += elapsed;
-        while (this.lag >= 1000 * STEP) {
-          this._update(STEP);
-          this.lag -= 1000 * STEP;
-        }
+  _setupLoop() {
+    const tick = () => {
+      const now = Date.now();
+      const dt = Math.min((now - this.lastT) / 1000, 0.05);
+      this.lastT = now;
+
+      if (this.running) {
+        this._update(dt);
       }
       this._draw();
-      this._loop();
-    });
+      requestAnimationFrame(tick);
+    };
+    tick();
   }
 
   _update(dt) {
-    const local  = this.players[this.localIdx];
+    const keys = this._keyState;
+    const p = this.players[this.localIdx];
+    if (p) {
+      let moveX = 0;
+      if (keys.left) moveX -= P_SPD;
+      if (keys.right) moveX += P_SPD;
+
+      p.vx = moveX;
+      if (keys.jump && p.onGround) {
+        p.vy = P_JUMP;
+        p.onGround = false;
+        SFX.play('jump');
+      }
+
+      const newState = moveX !== 0 ? 'run' : 'idle';
+      const newFacing = moveX > 0 ? 1 : moveX < 0 ? -1 : p.facing;
+
+      const moveData = {
+        x: p.x + moveX * dt,
+        y: p.y,
+        state: newState,
+        facing: newFacing,
+      };
+      moveData.x = Math.max(p.w / 2, Math.min(GW - p.w / 2, moveData.x));
+      p.tx = moveData.x;
+      p.tState = newState;
+      p.tFacing = newFacing;
+
+      SocketManager.move(moveData);
+      p.update(dt, keys);
+    }
+
+    // Update remote player
     const remote = this.players[1 - this.localIdx];
-    local.input(this.keys, dt, this.ps);
-    local.update(dt);
-    remote.update(dt);
+    if (remote) remote.update(dt, {});
+
+    // Update ball
     this.ball.update(dt);
     this.ps.update(dt);
-    if (this.respawnT > 0) this.respawnT = Math.max(0, this.respawnT - dt);
-    if (this.scoreFlash.on) { this.scoreFlash.t -= dt; if (this.scoreFlash.t <= 0) this.scoreFlash.on = false; }
 
-    // Send position to server (~30/s)
-    const now = performance.now();
-    if (now - this.lastSend > 33) {
-      this.lastSend = now;
-      SocketManager.move({ x: local.x, y: local.y, state: local.state, facing: local.facing });
-    }
+    // Update respawn timer
+    if (this.respawnT > 0) this.respawnT -= dt;
+    if (this.scoreFlash.on) this.scoreFlash.t -= dt;
+    if (this.scoreFlash.t <= 0) this.scoreFlash.on = false;
   }
 
   _draw() {
     const ctx = this.ctx;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, GW, GH);
+
     this.bg.draw(ctx);
-    this._drawGoals(ctx);
-    this.ps.draw(ctx);
+
+    // Draw court lines
+    ctx.strokeStyle = 'rgba(255,255,255,.4)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 6]);
+    ctx.beginPath();
+    ctx.moveTo(NX, GY - NH);
+    ctx.lineTo(NX, GY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Draw players
+    this.players.forEach(p => p?.draw(ctx));
+
+    // Draw ball
     this.ball.draw(ctx);
-    this.players.forEach(p => p && p.draw(ctx));
+
+    // Draw goal zones
+    this._drawGoals(ctx);
     this._drawNet(ctx);
-    if (this.scoreFlash.on) {
-      ctx.save(); ctx.globalAlpha = Math.min(1, this.scoreFlash.t * 2) * .15;
-      ctx.fillStyle = this.scoreFlash.who === 0 ? '#FF6B9D' : '#4ECDC4';
-      ctx.fillRect(0, 0, GW, GH); ctx.restore();
-    }
-    if (this.respawnT > 0 && !this.ball.visible) {
+
+    // Draw particles
+    this.ps.draw(ctx);
+
+    // Respawn timer
+    if (this.respawnT > 0) {
       ctx.save();
-      ctx.font = 'bold 110px Nunito,Arial,sans-serif';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = 'rgba(255,255,255,.85)';
-      ctx.shadowColor = 'rgba(0,0,0,.2)'; ctx.shadowBlur = 16;
-      ctx.fillText(Math.ceil(this.respawnT), GW / 2, GH / 2);
+      ctx.font = 'bold 48px sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,.6)';
+      ctx.textAlign = 'center';
+      ctx.fillText(Math.ceil(this.respawnT), GW / 2, GY / 2);
+      ctx.restore();
+    }
+
+    // Score flash
+    if (this.scoreFlash.on) {
+      const alpha = Math.max(0, this.scoreFlash.t / 0.3);
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.4;
+      ctx.fillStyle = this.scoreFlash.who === 0 ? '#ff69b4' : '#4ecdc4';
+      ctx.fillRect(0, 0, GW, GH);
       ctx.restore();
     }
   }
 
   _drawGoals(ctx) {
-    const pink = '#FF6B9D', bg = 'rgba(255,107,157,.18)';
+    const pink = '#ff69b4';
+    const bg = 'rgba(255, 255, 255, 0.3)';
     // Left goal
     ctx.fillStyle = bg; ctx.fillRect(0, GOAL_TOP, GOAL_W, GY - GOAL_TOP);
-    ctx.strokeStyle = pink; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.strokeStyle = pink; ctx.lineWidth = 4;
     ctx.beginPath(); ctx.moveTo(0, GOAL_TOP); ctx.lineTo(GOAL_W + 5, GOAL_TOP); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(GOAL_W, GOAL_TOP); ctx.lineTo(GOAL_W, GY); ctx.stroke();
     ctx.fillStyle = pink; ctx.beginPath(); ctx.arc(GOAL_W, GOAL_TOP, 7, 0, Math.PI * 2); ctx.fill();
@@ -622,7 +557,6 @@ class Game {
     ctx.fillStyle = '#cc3344'; ctx.fillRect(nl - 4, nt - 3, 18, 4);
   }
 
-  // ── Server event handlers ─────────────────────────────────────────────────
   onBall(m) { this.ball.setTarget(m.bx, m.by, m.vx, m.vy); }
 
   onBounce(m) {
@@ -668,6 +602,22 @@ class Game {
     const r = this.players[1 - this.localIdx]; if (!r) return;
     r.tx = m.x; r.ty = m.y; r.tState = m.state || 'idle'; r.tFacing = m.facing || 1;
   }
+
+  start(idx, code) {
+    this.localIdx = idx;
+    this.roomCode = code;
+    this.running = true;
+    const skin0 = CURRENT_SKINS[0] || 'cat1';
+    const skin1 = CURRENT_SKINS[1] || 'cat2';
+    this.players[0] = new Player(220, GY - 40, skin0);
+    this.players[1] = new Player(GW - 220, GY - 40, skin1);
+    document.getElementById('roomcode').textContent = code;
+  }
+
+  stop() {
+    this.running = false;
+    this._keyState = {};
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -685,6 +635,13 @@ const UI = (() => {
   }
 
   function nick() { return ($('inp-nick')?.value.trim() || 'Аноним').slice(0, 14); }
+
+  function updateSkinDisplay() {
+    const s0 = SKINS[CURRENT_SKINS[0]] || SKINS.cat1;
+    const s1 = SKINS[CURRENT_SKINS[1]] || SKINS.cat2;
+    $('sel-skin1').textContent = s0.name;
+    $('sel-skin2').textContent = s1.name;
+  }
 
   function init() {
     const cv = $('cv');
@@ -707,7 +664,35 @@ const UI = (() => {
     // ── Button wiring ──
     $('btn-create').onclick = () => {
       NICKS[0] = nick();
+      IS_BOT_MODE = false;
       SocketManager.create(NICKS[0]);
+    };
+
+    // BOT MODE
+    $('btn-bot').onclick = () => {
+      NICKS[0] = nick();
+      NICKS[1] = 'BOT 🤖';
+      IS_BOT_MODE = true;
+      $('sn1').textContent = '😸 ' + NICKS[0];
+      $('sn2').textContent = NICKS[1];
+      $('sc1').textContent = '0'; $('sc2').textContent = '0';
+      show('s-game');
+      game.start(0, 'BOT_MODE');
+    };
+
+    // SKIN SELECTION
+    $('btn-skin1').onclick = () => {
+      const keys = Object.keys(SKINS);
+      const current = keys.indexOf(CURRENT_SKINS[0]);
+      CURRENT_SKINS[0] = keys[(current + 1) % keys.length];
+      updateSkinDisplay();
+    };
+
+    $('btn-skin2').onclick = () => {
+      const keys = Object.keys(SKINS);
+      const current = keys.indexOf(CURRENT_SKINS[1]);
+      CURRENT_SKINS[1] = keys[(current + 1) % keys.length];
+      updateSkinDisplay();
     };
 
     $('btn-join-show').onclick = () => {
@@ -719,6 +704,7 @@ const UI = (() => {
       const code = $('inp-code').value.trim().toUpperCase();
       if (!code) return;
       NICKS[1] = nick();
+      IS_BOT_MODE = false;
       SocketManager.join(code, NICKS[1]);
     };
 
@@ -753,6 +739,7 @@ const UI = (() => {
       $('wait-box').classList.remove('hidden');
       $('code-show').textContent = m.code;
       $('btn-create').classList.add('hidden');
+      $('btn-bot').classList.add('hidden');
       $('btn-join-show').classList.add('hidden');
     });
 
@@ -811,6 +798,8 @@ const UI = (() => {
       game.stop();
       $('s-disc').classList.remove('hidden');
     });
+
+    updateSkinDisplay();
   }
 
   return { init };
