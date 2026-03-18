@@ -27,19 +27,18 @@ const rooms = new Map();
 // ── Physics constants (must match client!) ────────────────────────────────────
 const GW = 1280, GH = 720, GY = GH - 90;
 const NX = GW / 2, NH = 150;
-const BR = 28;  // ИСПРАВЛЕНО: было 22
-const GRAV = 520, BOUNCE = 0.78;  // ИСПРАВЛЕНО: было 0.80
+const BR = 22;
+const GRAV = 520, BOUNCE = 0.80;
 const GOAL_W = 32, GOAL_TOP = GY - 115;
 const WIN = 12;
 const TICK = 1000 / 60;
 
 // ── Room ──────────────────────────────────────────────────────────────────────
 class Room {
-  constructor(code, isBot = false) {
+  constructor(code) {
     this.code = code;
-    this.isBot = isBot;
-    this.sockets = [];
-    this.nicks = ['Игрок 1', isBot ? 'BOT 🤖' : 'Игрок 2'];
+    this.sockets = [];          // [ws0, ws1]
+    this.nicks = ['Игрок 1', 'Игрок 2'];
     this.scores = [0, 0];
     this.hits = [0, 0];
     this.ball = null;
@@ -47,14 +46,11 @@ class Room {
     this.rallyCount = 0;
     this.interval = null;
     this.alive = true;
-    
-    // Bot AI
-    this.botX = GW - 220;
-    this.botY = GY - 40;
   }
 
   spawnBall(side) {
     const dir = side === 0 ? 1 : -1;
+    // Spawn safely in centre, above ground
     return { x: GW / 2, y: GY - 220, vx: dir * 260, vy: -300 };
   }
 
@@ -69,6 +65,7 @@ class Room {
       last = now;
       this.tick(dt);
     }, TICK);
+    // Ball launches after 3 second countdown
     this.serveBall(0, 3000);
   }
 
@@ -87,29 +84,6 @@ class Room {
     if (this.interval) { clearInterval(this.interval); this.interval = null; }
     this.alive = false;
     this.ballActive = false;
-  }
-
-  // ── BOT AI ────────────────────────────────────────────────────────────────
-  updateBotAI(ballX, ballY) {
-    if (!this.isBot) return;
-    
-    // Simple bot: track ball, try to hit it back
-    const targetX = ballX < NX ? GW - 220 : Math.max(300, Math.min(GW - 300, ballX + 80));
-    const moveDir = Math.sign(targetX - this.botX);
-    const moveSpeed = 250;
-    
-    if (Math.abs(targetX - this.botX) > 20) {
-      this.botX += moveDir * moveSpeed * (1 / 60);
-    }
-    
-    // Jump when ball approaches
-    if (Math.abs(ballX - this.botX) < 100 && Math.abs(ballY - this.botY) < 150 && ballY > GY - 180) {
-      this.botY = Math.max(GY - 200, this.botY - 8);
-    } else {
-      this.botY = Math.min(GY - 40, this.botY + 8);
-    }
-    
-    this.botX = Math.max(200, Math.min(GW - 200, this.botX));
   }
 
   tick(dt) {
@@ -141,21 +115,21 @@ class Room {
       this.broadcast({ type: 'bounce', kind: 'net', bx: b.x, by: b.y });
     }
 
-    // Player collisions (circle vs circle) - ИСПРАВЛЕНО
+    // Player collisions (circle vs circle)
     this.sockets.forEach((ws, i) => {
       const p = ws.pd; if (!p) return;
       const dx = b.x - p.x, dy = b.y - p.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       const minD = BR + 30;
-      if (dist < minD && dist > 0.1) {  // Prevent division by zero
+      if (dist < minD && dist > 0) {
         const nx = dx / dist, ny = dy / dist;
-        // Push ball out firmly
-        b.x = p.x + nx * (minD + 2);
-        b.y = p.y + ny * (minD + 2);
-        // Reflect velocity
+        // Push ball out
+        b.x = p.x + nx * (minD + 1);
+        b.y = p.y + ny * (minD + 1);
+        // Reflect
         const dot = b.vx * nx + b.vy * ny;
-        b.vx = (b.vx - 2 * dot * nx) * 0.95;
-        b.vy = (b.vy - 2 * dot * ny) * 0.95;
+        b.vx -= 2 * dot * nx;
+        b.vy -= 2 * dot * ny;
         // Boost
         const boost = 1.08 + Math.min(this.rallyCount * 0.012, 0.28);
         b.vx *= boost;
@@ -171,37 +145,15 @@ class Room {
       }
     });
 
-    // BOT collision
-    if (this.isBot && this.sockets.length > 0) {
-      const dx = b.x - this.botX, dy = b.y - this.botY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const minD = BR + 30;
-      if (dist < minD && dist > 0.1) {
-        const nx = dx / dist, ny = dy / dist;
-        b.x = this.botX + nx * (minD + 2);
-        b.y = this.botY + ny * (minD + 2);
-        const dot = b.vx * nx + b.vy * ny;
-        b.vx = (b.vx - 2 * dot * nx) * 0.95;
-        b.vy = (b.vy - 2 * dot * ny) * 0.95;
-        const boost = 1.08 + Math.min(this.rallyCount * 0.012, 0.28);
-        b.vx *= boost;
-        b.vy = Math.min(b.vy * boost, -190);
-        if (b.vx > -60) b.vx = -(60 + Math.abs(b.vx));
-        b.vx = Math.max(-680, Math.min(680, b.vx));
-        this.rallyCount++;
-        this.hits[1]++;
-        this.broadcast({ type: 'hit', player: 1, bx: b.x, by: b.y, rally: this.rallyCount });
-      }
-    }
-
-    // Bot AI update
-    if (this.isBot) this.updateBotAI(b.x, b.y);
-
     // ── Goals ──
+    // Left goal: ball touches left wall in goal zone → P2 scores
     if (b.x - BR <= GOAL_W && b.y > GOAL_TOP) { this.goal(1); return; }
+    // Left wall above goal → bounce
     if (b.x - BR <= GOAL_W) { b.x = GOAL_W + BR; b.vx = Math.abs(b.vx) * 0.82; }
 
+    // Right goal: ball touches right wall in goal zone → P1 scores
     if (b.x + BR >= GW - GOAL_W && b.y > GOAL_TOP) { this.goal(0); return; }
+    // Right wall above goal → bounce
     if (b.x + BR >= GW - GOAL_W) { b.x = GW - GOAL_W - BR; b.vx = -Math.abs(b.vx) * 0.82; }
 
     this.broadcast({ type: 'ball', bx: b.x, by: b.y, vx: b.vx, vy: b.vy, t: Date.now() });
@@ -218,6 +170,7 @@ class Room {
       this.broadcast({ type: 'gameover', winner: scorer, scores: this.scores, hits: this.hits, nicks: this.nicks });
       return;
     }
+    // Loser serves after 3s
     this.serveBall(1 - scorer, 3000);
   }
 
@@ -250,7 +203,7 @@ wss.on('connection', ws => {
 
     if (m.type === 'create') {
       const code = makeCode();
-      const room = new Room(code, false);
+      const room = new Room(code);
       rooms.set(code, room);
       ws.room = room;
       ws.pi = 0;
@@ -271,8 +224,11 @@ wss.on('connection', ws => {
       ws.pd.x = GW - 220;
       room.sockets[1] = ws;
       if (m.nick) room.nicks[1] = m.nick.slice(0, 16);
+      // Tell P2
       ws.send(JSON.stringify({ type: 'joined', code, pi: 1, nicks: room.nicks }));
+      // Tell P1 opponent arrived
       room.send(0, { type: 'opponent', nick: room.nicks[1] });
+      // Start!
       room.startGame();
       room.broadcast({ type: 'start', nicks: room.nicks, scores: [0, 0] });
       console.log('Game started:', code);
@@ -300,4 +256,4 @@ wss.on('connection', ws => {
   });
 });
 
-server.listen(PORT, () => console.log(`🐱 Kitten Tennis v2.1 on http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`🐱 Kitten Tennis on http://localhost:${PORT}`));

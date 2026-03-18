@@ -13,49 +13,24 @@
   <div class="card">
     <div class="logo">🐾 Kitten Tennis 🎾</div>
     <p class="sub">Милый теннис для двоих!</p>
-    
-    <!-- Nick input -->
     <div class="field">
       <label>Твой ник</label>
       <input id="inp-nick" type="text" maxlength="14" placeholder="Введи ник..." autocomplete="off"/>
     </div>
-
-    <!-- Skins Selection -->
-    <div class="skins-box">
-      <label style="text-align: center; display: block; margin-bottom: 10px; font-size: 11px; font-weight: 900; color: #c8b8a8; letter-spacing: 1px; text-transform: uppercase;">Выбрать скины</label>
-      <div style="display: flex; gap: 8px; justify-content: center;">
-        <button class="btn skin-btn" id="btn-skin1">
-          <span id="sel-skin1">😸 Кот</span>
-        </button>
-        <button class="btn skin-btn" id="btn-skin2">
-          <span id="sel-skin2">😺 Улыбка</span>
-        </button>
-      </div>
-    </div>
-
-    <!-- Game Mode Buttons -->
     <button class="btn pink" id="btn-create">🏠 Создать комнату</button>
-    <button class="btn orange" id="btn-bot">🤖 Играть с ботом</button>
     <button class="btn teal" id="btn-join-show">🔗 Войти в комнату</button>
-    
     <div id="join-box" class="hidden">
       <input id="inp-code" type="text" maxlength="10" placeholder="Код комнаты (CATXXXX)" autocomplete="off"/>
       <button class="btn orange" id="btn-join">🐾 Войти!</button>
       <p id="join-err" class="err hidden"></p>
     </div>
-    
     <div id="wait-box" class="wait-box hidden">
       <p class="wlabel">Скинь код другу:</p>
       <div class="code-show" id="code-show">...</div>
       <button class="btn small" id="btn-copy">📋 Скопировать</button>
       <div class="waiting">Ждём соперника<span class="dots"></span></div>
     </div>
-    
-    <p class="hint">
-      <strong>Управление:</strong><br/>
-      P1: A/D (или Ф/В) + Пробел (прыжок) + S (вниз)<br/>
-      P2: ←/→ + ↑ + ↓
-    </p>
+    <p class="hint">P1: A/D + Пробел (прыжок) + S (вниз) &nbsp;|&nbsp; P2: ←/→ + ↑ + ↓</p>
   </div>
   <div class="dcat left">🐱</div>
   <div class="dcat right">😺</div>
@@ -77,7 +52,7 @@
   <div class="cvwrap">
     <canvas id="cv"></canvas>
   </div>
-  <div class="hint2">P1: A/D (Ф/В) + Пробел + S &nbsp;|&nbsp; P2: ←/→ + ↑ + ↓</div>
+  <div class="hint2">P1: A/D + Пробел + S(вниз) &nbsp;|&nbsp; P2: ←/→ + ↑ + ↓(вниз)</div>
 </div>
 
 <!-- GAMEOVER -->
